@@ -3,7 +3,7 @@ A complete customized GPT that has access to your host machine's `Arduino/` fold
 
 [![Watch the video](thumbnail.jpg)](https://www.youtube.com/watch?v=Hhlq1Eq2puk)
 
-The launch the `server.py` use `uvicorn`:
+To launch the `server.py` use `uvicorn`:
 ```bash
 Arduino-Project-Manager-GPT: $ uvicorn server:app --host 127.0.0.1 --port 8000 &
 ```
