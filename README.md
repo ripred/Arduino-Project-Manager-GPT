@@ -46,6 +46,8 @@ Connections                   ttl     opn     rt1     rt5     p50     p90
                               0       0       0.00    0.00    0.00    0.00
 ```
 
+**Note that the forwarding url will change every time you start `ngrok` with a free subscription.**
+
 Copy the forwarding address and paste it into the openAI Custom GPT yaml configuration where it asks for the url:
 
 ```bash
