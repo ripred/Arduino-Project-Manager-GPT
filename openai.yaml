@@ -1,10 +1,10 @@
-openapi: 3.1.0
+openapi: 3.0.3
 info:
   title: Arduino Project Manager API
-  description: API for managing Arduino projects using arduino-cli, with cached file listing and just-in-time file reading.
-  version: 2.0.0
+  description: API for managing Arduino projects using arduino-cli, with caching for project and library files, just-in-time reading, and read-only library browsing.
+  version: 2.1.0
 servers:
-  - url: [PLACE-YOUR-NGROK-URL-HERE]
+  - url: https://3927-70-119-126-223.ngrok-free.app
     description: Ngrok tunnel URL for the FastAPI server
 
 paths:
@@ -12,7 +12,6 @@ paths:
     post:
       operationId: checkFolder
       summary: Check if project folder exists
-      description: Check if the specified project folder exists in ../Arduino/. Use this to verify existence before creating, reading, updating, compiling, or uploading a project.
       requestBody:
         required: true
         content:
@@ -22,21 +21,11 @@ paths:
               properties:
                 project_name:
                   type: string
-                  description: The name of the Arduino project. Must be a valid folder name without special characters.
-                  minLength: 1
-                  maxLength: 50
               required:
                 - project_name
       responses:
         "200":
-          description: Folder existence status
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  exists:
-                    type: boolean
+          description: Existence status
         "500":
           description: Server error
 
@@ -44,10 +33,10 @@ paths:
     post:
       deprecated: true
       operationId: readFiles
-      summary: DEPRECATED - Return only filenames in project
+      summary: DEPRECATED - Only returns filenames
       description: >
-        Deprecated. Previously returned content of all files, but now only returns a list of filenames to prevent huge payloads.  
-        For file content, call /read_file with a specific path.
+        Deprecated. Formerly returned all file contents, now only returns filenames to avoid huge payloads.  
+        Use /read_file to fetch contents of an individual file.
       requestBody:
         required: true
         content:
@@ -57,66 +46,38 @@ paths:
               properties:
                 project_name:
                   type: string
-                  description: The Arduino project name
-                  minLength: 1
-                  maxLength: 50
               required:
                 - project_name
       responses:
         "200":
-          description: List of filenames
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  files:
-                    type: array
-                    items:
-                      type: string
-                  message:
-                    type: string
+          description: Filenames
         "404":
-          description: Project folder not found
+          description: Project not found
         "500":
           description: Server error
 
   /list_files_in_project:
     get:
       operationId: listFilesInProject
-      summary: List all filenames (no content) in a project
-      description: Returns a list of all file paths for the specified project, from the in-memory cache. If not cached, tries to refresh. No contents returned.
+      summary: List filenames in a project
       parameters:
         - in: query
           name: project_name
           schema:
             type: string
           required: true
-          description: The Arduino project name
       responses:
         "200":
           description: Filenames
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  project_name:
-                    type: string
-                  files:
-                    type: array
-                    items:
-                      type: string
         "404":
-          description: Project folder not found
+          description: Project not found
         "500":
           description: Server error
 
   /read_file:
     post:
       operationId: readFile
-      summary: Read contents of a single file
-      description: Returns the content of the specified file, on demand.
+      summary: Read contents of a single project file
       requestBody:
         required: true
         content:
@@ -126,37 +87,23 @@ paths:
               properties:
                 project_name:
                   type: string
-                  description: The Arduino project name
                 file_path:
                   type: string
-                  description: The relative path of the file in the project folder (e.g., "src/main.cpp").
               required:
                 - project_name
                 - file_path
       responses:
         "200":
           description: File contents
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  file_path:
-                    type: string
-                  content:
-                    type: string
         "404":
-          description: Project folder or file not found
+          description: File or project not found
         "500":
           description: Server error
 
   /create_project:
     post:
       operationId: createProject
-      summary: Create a new project folder and an optional file
-      description: >
-        Creates a new project folder. By default, also creates <project_name>.ino in the root, or the specified file_path if provided.  
-        Returns 400 if the folder already exists.
+      summary: Create a new project folder and one file
       requestBody:
         required: true
         content:
@@ -175,9 +122,9 @@ paths:
                 - sketch_content
       responses:
         "200":
-          description: Project creation status
+          description: Project creation
         "400":
-          description: Project folder already exists
+          description: Project exists
         "500":
           description: Server error
 
@@ -185,8 +132,6 @@ paths:
     post:
       operationId: updateSketch
       summary: Update or create a file in an existing project
-      description: >
-        Updates (or creates) a file. If file_path is omitted, updates <project_name>.ino in the project root.
       requestBody:
         required: true
         content:
@@ -205,19 +150,16 @@ paths:
                 - sketch_content
       responses:
         "200":
-          description: File update status
+          description: Update success
         "404":
-          description: Project folder not found
+          description: Project not found
         "500":
           description: Server error
 
   /compile_project:
     post:
       operationId: compileProject
-      summary: Compile project using arduino-cli
-      description: >
-        Compile the specified project, assuming <project_name>.ino is in the root.  
-        If your .ino is located differently, rename or adapt the code.
+      summary: Compile a project
       requestBody:
         required: true
         content:
@@ -233,16 +175,14 @@ paths:
         "200":
           description: Compilation result
         "404":
-          description: Project or .ino not found
+          description: Project or main .ino not found
         "500":
-          description: Server error
+          description: Error compiling
 
   /upload_project:
     post:
       operationId: uploadProject
-      summary: Upload compiled project to Arduino
-      description: >
-        Upload to the specified port, expecting <project_name>.ino in the root.
+      summary: Upload project to an Arduino board
       requestBody:
         required: true
         content:
@@ -261,19 +201,283 @@ paths:
         "200":
           description: Upload result
         "404":
-          description: Project or .ino not found
+          description: Project or main .ino not found
         "500":
-          description: Server error
+          description: Error uploading
 
   /list_projects:
     get:
       operationId: listProjects
       summary: List all project folders
-      description: >
-        Lists all project folders in the Arduino/ directory (cached), excluding hidden or system directories.
       responses:
         "200":
           description: List of project folders
         "500":
           description: Server error
+
+  /list_libraries:
+    get:
+      operationId: listLibraries
+      summary: List library folders in Arduino/libraries
+      responses:
+        "200":
+          description: Library list
+        "500":
+          description: Server error
+
+  /list_files_in_library:
+    get:
+      operationId: listFilesInLibrary
+      summary: List filenames in a specific library
+      parameters:
+        - in: query
+          name: library_name
+          schema:
+            type: string
+          required: true
+      responses:
+        "200":
+          description: Filenames
+        "404":
+          description: Library not found
+        "500":
+          description: Server error
+
+  /read_library_file:
+    post:
+      operationId: readLibraryFile
+      summary: Read a single file from a library (read-only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                library_name:
+                  type: string
+                file_path:
+                  type: string
+              required:
+                - library_name
+                - file_path
+      responses:
+        "200":
+          description: File contents
+        "404":
+          description: File/library not found
+        "500":
+          description: Server error
+
+  /copy_library_example:
+    post:
+      operationId: copyLibraryExample
+      summary: Copy an example folder from a library into a local project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                library_name:
+                  type: string
+                example_folder:
+                  type: string
+                new_project_name:
+                  type: string
+              required:
+                - library_name
+                - example_folder
+                - new_project_name
+      responses:
+        "200":
+          description: Copy success
+        "404":
+          description: Library or example not found
+        "500":
+          description: Server error
+
+  # -----------------------------
+  # Library Management Endpoints
+  # -----------------------------
+  /list_libraries_installed:
+    get:
+      operationId: listLibrariesInstalled
+      summary: Run `arduino-cli lib list` to see installed libraries
+      responses:
+        "200":
+          description: CLI output
+        "500":
+          description: Error listing libraries
+
+  /search_library:
+    post:
+      operationId: searchLibrary
+      summary: Search libraries by keyword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                keyword:
+                  type: string
+              required:
+                - keyword
+      responses:
+        "200":
+          description: CLI output
+        "500":
+          description: Error searching libraries
+
+  /install_library:
+    post:
+      operationId: installLibrary
+      summary: Install a library
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                library_name:
+                  type: string
+              required:
+                - library_name
+      responses:
+        "200":
+          description: CLI output
+        "500":
+          description: Error installing library
+
+  /uninstall_library:
+    post:
+      operationId: uninstallLibrary
+      summary: Uninstall a library
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                library_name:
+                  type: string
+              required:
+                - library_name
+      responses:
+        "200":
+          description: CLI output
+        "500":
+          description: Error uninstalling library
+
+  /update_library:
+    post:
+      operationId: updateLibrary
+      summary: Update a specific library
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                library_name:
+                  type: string
+              required:
+                - library_name
+      responses:
+        "200":
+          description: CLI output
+        "500":
+          description: Error updating library
+
+  /update_all_libraries:
+    post:
+      operationId: updateAllLibraries
+      summary: Update all libraries
+      responses:
+        "200":
+          description: CLI output
+        "500":
+          description: Error updating libraries
+
+  # -----------------------------
+  # Board/Core Management
+  # -----------------------------
+  /list_connected_boards:
+    get:
+      operationId: listConnectedBoards
+      summary: List boards currently connected
+      responses:
+        "200":
+          description: CLI output
+        "500":
+          description: Error listing boards
+
+  /search_cores:
+    post:
+      operationId: searchCores
+      summary: Search board cores
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                keyword:
+                  type: string
+              required:
+                - keyword
+      responses:
+        "200":
+          description: CLI output
+        "500":
+          description: Error searching cores
+
+  /install_core:
+    post:
+      operationId: installCore
+      summary: Install a board core
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                core:
+                  type: string
+              required:
+                - core
+      responses:
+        "200":
+          description: CLI output
+        "500":
+          description: Error installing core
+
+  /uninstall_core:
+    post:
+      operationId: uninstallCore
+      summary: Uninstall a board core
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                core:
+                  type: string
+              required:
+                - core
+      responses:
+        "200":
+          description: CLI output
+        "500":
+          description: Error uninstalling core
 
