@@ -33,7 +33,7 @@ Arduino-Project-Manager-GPT: $ ngrok http 8000
 and the ngrok screen will be displayed:
 
 ```bash
-ngrok                                                                                                                                                (Ctrl+C to quit)
+ngrok                                                                              (Ctrl+C to quit)
 
 🐛 Found a bug? Let us know: https://github.com/ngrok/ngrok
 
