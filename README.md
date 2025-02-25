@@ -14,7 +14,8 @@ you will see the server start as a background task. Press return to get back to 
 ```bash
 Arduino-Project-Manager-GPT: $ uvicorn server:app --host 127.0.0.1 --port 8000 &
 [1] 13977
-Arduino-Project-Manager-GPT: $ 2025-02-24 22:39:02,714 - INFO - Arduino projects directory set to: /Users/username/Documents/Arduino
+Arduino-Project-Manager-GPT: $
+2025-02-24 22:39:02,714 - INFO - Arduino projects directory set to: /Users/username/Documents/Arduino
 2025-02-24 22:39:02,715 - INFO - Building initial project cache...
 2025-02-24 22:39:02,989 - INFO - Initial cache built with 192 projects.
 INFO:     Started server process [13977]
@@ -86,9 +87,10 @@ servers:
 At this point your Custom GPT will be ready to test, modify, and publish!
 
 **To Exit `ngrok`**
+
 Hit ctrl-c to stop and exit `ngrok`.
 
-The make the `uvicorn` process the foreground, and hit ctrl-c again to exit `uvicorn`.
+Then make the `uvicorn` process the foreground, and hit ctrl-c again to exit `uvicorn`.
 
 ```bash
 Arduino-Project-Manager-GPT: $ ngrok http 8000
