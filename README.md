@@ -80,3 +80,21 @@ servers:
 ```
 
 At this point your Custom GPT will be ready to test, modify, and publish!
+
+**To Exit `ngrok`**
+Hit ctrl-c to stop and exit `ngrok`.
+
+The make the `uvicorn` process the foreground, and hit ctrl-c again to exit `uvicorn`.
+
+```bash
+Arduino-Project-Manager-GPT: $ ngrok http 8000
+Arduino-Project-Manager-GPT: $
+Arduino-Project-Manager-GPT: $
+Arduino-Project-Manager-GPT: $ fg
+uvicorn server:app --host 127.0.0.1 --port 8000
+^CINFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [13977]
+Arduino-Project-Manager-GPT: $
+```
