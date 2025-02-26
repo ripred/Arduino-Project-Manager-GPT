@@ -1,9 +1,9 @@
 # Arduino-Project-Manager-GPT
 A complete customized GPT that has access to your host machine's `Arduino/` folder to compile, upload, create, debug, manage libraries and board cores, automate build processes and much more!
 
-[![Watch the video](thumbnail.jpg)](https://www.youtube.com/watch?v=Hhlq1Eq2puk)
+[![Watch a demo video](thumbnail.jpg)](https://www.youtube.com/watch?v=Hhlq1Eq2puk)
 
-For a full series of videos visit https://reddit.com/r/arduino_ai
+For a full series of videos and project discussion visit https://reddit.com/r/arduino_ai
 
 To launch the `server.py` use `uvicorn`:
 ```bash
