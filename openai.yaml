@@ -4,7 +4,7 @@ info:
   description: API for managing Arduino projects using arduino-cli, with caching for project and library files, just-in-time reading, and read-only library browsing.
   version: 2.1.0
 servers:
-  - url: https://3927-70-119-126-223.ngrok-free.app
+  - url: [PLACE_YOUR_PUBLIC_NGROK_URL_HERE]
     description: Ngrok tunnel URL for the FastAPI server
 
 paths:
