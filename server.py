@@ -95,13 +95,12 @@ def safe_relative_path(value: str, label: str) -> Path:
 
 
 def resolve_under(base_dir: Path, relative_path: Path, label: str) -> Path:
-    base = base_dir.resolve()
-    target = (base / relative_path).resolve()
-    try:
-        target.relative_to(base)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid {label}") from exc
-    return target
+    base = os.path.realpath(str(base_dir))
+    target = os.path.realpath(os.path.join(base, str(relative_path)))
+    base_prefix = base if base.endswith(os.sep) else base + os.sep
+    if target != base and not target.startswith(base_prefix):
+        raise HTTPException(status_code=400, detail=f"Invalid {label}")
+    return Path(target)
 
 
 def project_dir_for(project_name: str) -> Path:
