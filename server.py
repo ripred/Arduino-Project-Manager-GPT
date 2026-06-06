@@ -19,6 +19,7 @@ import subprocess
 import logging
 import platform
 import shutil
+import re
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional, Dict, List
@@ -71,6 +72,60 @@ PROJECT_CACHE: Dict[str, Dict[str, any]] = {}
 # LIBRARY_CACHE: Map of library_name -> {path: Path, files: [relPaths]}
 LIBRARY_CACHE: Dict[str, Dict[str, any]] = {}
 
+SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_. -]+$")
+
+
+def safe_name(value: str, label: str) -> str:
+    name = str(value or "").strip()
+    if not name or "\0" in name or not SAFE_NAME_RE.fullmatch(name):
+        raise HTTPException(status_code=400, detail=f"Invalid {label}")
+    if name in {".", ".."} or "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail=f"Invalid {label}")
+    return name
+
+
+def safe_relative_path(value: str, label: str) -> Path:
+    raw = str(value or "").strip()
+    if not raw or "\0" in raw or raw.startswith(("/", "\\")):
+        raise HTTPException(status_code=400, detail=f"Invalid {label}")
+    parts = re.split(r"[\\/]+", raw)
+    if any(part in {"", ".", ".."} for part in parts):
+        raise HTTPException(status_code=400, detail=f"Invalid {label}")
+    return Path(*parts)
+
+
+def resolve_under(base_dir: Path, relative_path: Path, label: str) -> Path:
+    base = base_dir.resolve()
+    target = (base / relative_path).resolve()
+    try:
+        target.relative_to(base)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid {label}") from exc
+    return target
+
+
+def project_dir_for(project_name: str) -> Path:
+    return resolve_under(ARDUINO_DIR, Path(safe_name(project_name, "project name")), "project name")
+
+
+def project_file_for(project_name: str, file_path: str) -> Path:
+    project_dir = project_dir_for(project_name)
+    return resolve_under(project_dir, safe_relative_path(file_path, "file path"), "file path")
+
+
+def library_file_for(library_name: str, file_path: str) -> Path:
+    library = safe_name(library_name, "library name")
+    if library not in LIBRARY_CACHE:
+        raise HTTPException(status_code=404, detail="Library not found")
+    return resolve_under(LIBRARY_CACHE[library]["path"], safe_relative_path(file_path, "file path"), "file path")
+
+
+def safe_cli_arg(value: str, label: str) -> str:
+    text = str(value or "").strip()
+    if not text or "\0" in text or any(ord(ch) < 32 for ch in text):
+        raise HTTPException(status_code=400, detail=f"Invalid {label}")
+    return text
+
 def get_files_in_dir(base_dir: Path) -> List[str]:
     """
     Return a sorted list of all relative file paths in base_dir, skipping hidden/system files.
@@ -119,7 +174,8 @@ def refresh_project_cache(project_name: str):
     Refresh the file list for a single project.
     If it no longer exists, remove from PROJECT_CACHE.
     """
-    project_dir = ARDUINO_DIR / project_name
+    project_name = safe_name(project_name, "project name")
+    project_dir = project_dir_for(project_name)
     if not project_dir.exists():
         logger.info(f"Removing '{project_name}' from PROJECT_CACHE (no longer on disk).")
         PROJECT_CACHE.pop(project_name, None)
@@ -210,7 +266,8 @@ class CoreSearchRequest(BaseModel):
 # ---------------------------------------------------------
 # Helper Functions
 # ---------------------------------------------------------
-def run_command(command: List[str], cwd: Optional[Path] = None) -> Dict[str, str]:
+def run_arduino_cli(args: List[str], cwd: Optional[Path] = None) -> Dict[str, str]:
+    command = ["arduino-cli", *[safe_cli_arg(arg, "arduino-cli argument") for arg in args]]
     try:
         result = subprocess.run(
             command,
@@ -221,18 +278,19 @@ def run_command(command: List[str], cwd: Optional[Path] = None) -> Dict[str, str
         )
         return {"status": "success", "output": result.stdout, "error": ""}
     except subprocess.CalledProcessError as e:
-        logger.error(f"Command failed: {command}\nError: {e.stderr}")
-        return {"status": "error", "output": "", "error": e.stderr}
+        logger.error("Arduino CLI command failed: %s", command)
+        logger.debug("Arduino CLI stderr: %s", e.stderr)
+        return {"status": "error", "output": "", "error": "arduino-cli command failed"}
     except Exception as e:
-        logger.error(f"Unexpected error running command {command}: {str(e)}")
-        return {"status": "error", "output": "", "error": str(e)}
+        logger.exception("Unexpected error running Arduino CLI command: %s", command)
+        return {"status": "error", "output": "", "error": "arduino-cli command failed"}
 
 def create_or_update_file(base_dir: Path, relative_file_path: str, content: str) -> None:
-    full_path = base_dir / relative_file_path
+    full_path = resolve_under(base_dir, safe_relative_path(relative_file_path, "file path"), "file path")
     full_path.parent.mkdir(parents=True, exist_ok=True)
     with open(full_path, "w", encoding="utf-8") as f:
         f.write(content)
-    logger.info(f"File created/updated: {full_path}")
+    logger.info("File created/updated: %s", full_path)
 
 # ---------------------------------------------------------
 # Project Management Endpoints (with caching)
@@ -242,7 +300,7 @@ async def check_folder(request: ProjectRequest):
     """
     Check if the specified project folder exists.
     """
-    project_dir = ARDUINO_DIR / request.project_name
+    project_dir = project_dir_for(request.project_name)
     exists = project_dir.exists() and project_dir.is_dir()
     return {"exists": exists}
 
@@ -253,9 +311,9 @@ async def read_files(request: ProjectRequest):
     Now only returns a list of filenames. 
     Use /read_file to get actual file content on demand.
     """
-    project_name = request.project_name
+    project_name = safe_name(request.project_name, "project name")
     if project_name not in PROJECT_CACHE:
-        project_dir = ARDUINO_DIR / project_name
+        project_dir = project_dir_for(project_name)
         if not project_dir.exists():
             raise HTTPException(status_code=404, detail="Project folder not found")
         refresh_project_cache(project_name)
@@ -272,8 +330,9 @@ async def list_files_in_project(project_name: str):
     Return the list of all file paths (no content) for a given project.
     Uses PROJECT_CACHE. If missing, attempt to refresh. If still missing, 404.
     """
+    project_name = safe_name(project_name, "project name")
     if project_name not in PROJECT_CACHE:
-        project_dir = ARDUINO_DIR / project_name
+        project_dir = project_dir_for(project_name)
         if not project_dir.exists():
             raise HTTPException(status_code=404, detail="Project folder not found")
         refresh_project_cache(project_name)
@@ -288,8 +347,8 @@ async def read_file(request: ReadFileRequest):
     """
     Returns the content of a single file from a given project, on demand.
     """
-    project_name = request.project_name
-    file_path = request.file_path
+    project_name = safe_name(request.project_name, "project name")
+    file_path = str(safe_relative_path(request.file_path, "file path"))
 
     if project_name not in PROJECT_CACHE:
         refresh_project_cache(project_name)
@@ -298,7 +357,7 @@ async def read_file(request: ReadFileRequest):
 
     if file_path not in PROJECT_CACHE[project_name]["files"]:
         # Check if file actually exists on disk
-        full_path = PROJECT_CACHE[project_name]["path"] / file_path
+        full_path = project_file_for(project_name, file_path)
         if not full_path.exists():
             raise HTTPException(status_code=404, detail="File not found in project")
         # Refresh the cache
@@ -308,25 +367,25 @@ async def read_file(request: ReadFileRequest):
             raise HTTPException(status_code=404, detail="File not found in project after refresh")
 
     # Read content
-    full_path = PROJECT_CACHE[project_name]["path"] / file_path
+    full_path = project_file_for(project_name, file_path)
     try:
         with open(full_path, "r", encoding="utf-8", errors="replace") as f:
             content = f.read()
         return {"file_path": file_path, "content": content}
     except Exception as e:
-        logger.error(f"Failed to read file {full_path}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to read file %s", full_path)
+        raise HTTPException(status_code=500, detail="Failed to read file")
 
 @app.post("/create_project")
 async def create_project(request: SketchRequest):
-    project_name = request.project_name
-    project_dir = ARDUINO_DIR / project_name
+    project_name = safe_name(request.project_name, "project name")
+    project_dir = project_dir_for(project_name)
     if project_dir.exists():
         raise HTTPException(status_code=400, detail="Project already exists")
 
     try:
         project_dir.mkdir(parents=True, exist_ok=True)
-        file_path = request.file_path if request.file_path else f"{project_name}.ino"
+        file_path = str(safe_relative_path(request.file_path, "file path")) if request.file_path else f"{project_name}.ino"
         create_or_update_file(project_dir, file_path, request.sketch_content)
         refresh_project_cache(project_name)
 
@@ -335,60 +394,60 @@ async def create_project(request: SketchRequest):
             "message": f"Created project '{project_name}' with file '{file_path}'"
         }
     except Exception as e:
-        logger.error(f"Failed to create project {project_dir}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to create project: {str(e)}")
+        logger.exception("Failed to create project %s", project_dir)
+        raise HTTPException(status_code=500, detail="Failed to create project")
 
 @app.post("/update_sketch")
 async def update_sketch(request: SketchRequest):
-    project_name = request.project_name
-    project_dir = ARDUINO_DIR / project_name
+    project_name = safe_name(request.project_name, "project name")
+    project_dir = project_dir_for(project_name)
     if not project_dir.exists():
         raise HTTPException(status_code=404, detail="Project or sketch file not found")
 
-    file_path = request.file_path if request.file_path else f"{project_name}.ino"
+    file_path = str(safe_relative_path(request.file_path, "file path")) if request.file_path else f"{project_name}.ino"
     try:
         create_or_update_file(project_dir, file_path, request.sketch_content)
         refresh_project_cache(project_name)
         return {"status": "success", "message": f"Updated file '{file_path}' in project '{project_name}'"}
     except Exception as e:
-        logger.error(f"Failed to update file in {project_dir}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to update file in %s", project_dir)
+        raise HTTPException(status_code=500, detail="Failed to update file")
 
 @app.post("/compile_project")
 async def compile_project(request: ProjectRequest):
-    project_name = request.project_name
-    project_dir = ARDUINO_DIR / project_name
+    project_name = safe_name(request.project_name, "project name")
+    project_dir = project_dir_for(project_name)
     ino_file = project_dir / f"{project_name}.ino"
 
     if not project_dir.exists() or not ino_file.exists():
         raise HTTPException(status_code=404, detail="Project or sketch file not found")
 
-    command = [
-        "arduino-cli", "compile",
+    args = [
+        "compile",
         "--fqbn", "arduino:avr:nano:cpu=atmega328old",
         str(project_dir)
     ]
-    result = run_command(command, cwd=ARDUINO_DIR)
+    result = run_arduino_cli(args, cwd=ARDUINO_DIR)
     if result["status"] == "error":
         return {"status": "error", "message": result["error"]}
     return result
 
 @app.post("/upload_project")
 async def upload_project(request: UploadRequest):
-    project_name = request.project_name
-    project_dir = ARDUINO_DIR / project_name
+    project_name = safe_name(request.project_name, "project name")
+    project_dir = project_dir_for(project_name)
     ino_file = project_dir / f"{project_name}.ino"
 
     if not project_dir.exists() or not ino_file.exists():
         raise HTTPException(status_code=404, detail="Project or sketch file not found")
 
-    command = [
-        "arduino-cli", "upload",
-        "-p", request.port,
+    args = [
+        "upload",
+        "-p", safe_cli_arg(request.port, "serial port"),
         "--fqbn", "arduino:avr:nano:cpu=atmega328old",
         str(project_dir)
     ]
-    result = run_command(command, cwd=ARDUINO_DIR)
+    result = run_arduino_cli(args, cwd=ARDUINO_DIR)
     if result["status"] == "error":
         return {"status": "error", "message": result["error"]}
     return result
@@ -422,6 +481,7 @@ async def list_files_in_library(library_name: str):
     """
     Return the file paths in a specified library (read-only). No content returned here.
     """
+    library_name = safe_name(library_name, "library name")
     if library_name not in LIBRARY_CACHE:
         raise HTTPException(status_code=404, detail="Library not found")
     return {
@@ -435,8 +495,8 @@ async def read_library_file(request: ReadLibraryFileRequest):
     Returns the content of a single file in a specified library, read-only.
     Accepts JSON body: { "library_name": ..., "file_path": ... }
     """
-    library_name = request.library_name
-    file_path = request.file_path
+    library_name = safe_name(request.library_name, "library name")
+    file_path = str(safe_relative_path(request.file_path, "file path"))
 
     if library_name not in LIBRARY_CACHE:
         raise HTTPException(status_code=404, detail="Library not found in cache")
@@ -444,14 +504,14 @@ async def read_library_file(request: ReadLibraryFileRequest):
     if file_path not in LIBRARY_CACHE[library_name]["files"]:
         raise HTTPException(status_code=404, detail="File not found in this library")
 
-    full_path = LIBRARY_CACHE[library_name]["path"] / file_path
+    full_path = library_file_for(library_name, file_path)
     try:
         with open(full_path, "r", encoding="utf-8", errors="replace") as f:
             content = f.read()
         return {"file_path": file_path, "content": content}
     except Exception as e:
-        logger.error(f"Failed to read file {full_path}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to read library file %s", full_path)
+        raise HTTPException(status_code=500, detail="Failed to read library file")
 
 # ---------------------------------------------------------
 # Copy Example Folder from Library to New Project
@@ -462,19 +522,19 @@ async def copy_library_example(request: CopyExampleRequest):
     Copies an example folder from a library into a new or existing local project folder.
     example_folder is relative to library's "examples" subfolder.
     """
-    library_name = request.library_name
-    example_folder = request.example_folder
-    new_project_name = request.new_project_name
+    library_name = safe_name(request.library_name, "library name")
+    example_folder = str(safe_relative_path(request.example_folder, "example folder"))
+    new_project_name = safe_name(request.new_project_name, "project name")
 
     if library_name not in LIBRARY_CACHE:
         raise HTTPException(status_code=404, detail="Library not found")
 
     library_path = LIBRARY_CACHE[library_name]["path"]
-    source_folder = library_path / "examples" / example_folder
+    source_folder = resolve_under(library_path / "examples", safe_relative_path(example_folder, "example folder"), "example folder")
     if not source_folder.exists() or not source_folder.is_dir():
         raise HTTPException(status_code=404, detail="Example folder not found in library")
 
-    project_dir = ARDUINO_DIR / new_project_name
+    project_dir = project_dir_for(new_project_name)
     project_dir.mkdir(parents=True, exist_ok=True)
 
     # Recursively copy
@@ -507,40 +567,34 @@ async def list_libraries_installed():
     """
     Run `arduino-cli lib list` to see all installed libraries (CLI text-based).
     """
-    command = ["arduino-cli", "lib", "list"]
-    result = run_command(command)
+    result = run_arduino_cli(["lib", "list"])
     return result
 
 @app.post("/search_library")
 async def search_library(request: LibrarySearchRequest):
-    command = ["arduino-cli", "lib", "search", request.keyword]
-    return run_command(command)
+    return run_arduino_cli(["lib", "search", safe_cli_arg(request.keyword, "search keyword")])
 
 @app.post("/install_library")
 async def install_library(request: LibraryRequest):
-    command = ["arduino-cli", "lib", "install", request.library_name]
-    r = run_command(command)
+    r = run_arduino_cli(["lib", "install", safe_cli_arg(request.library_name, "library name")])
     build_library_cache()  # refresh to reflect new library folder
     return r
 
 @app.post("/uninstall_library")
 async def uninstall_library(request: LibraryRequest):
-    command = ["arduino-cli", "lib", "uninstall", request.library_name]
-    r = run_command(command)
+    r = run_arduino_cli(["lib", "uninstall", safe_cli_arg(request.library_name, "library name")])
     build_library_cache()
     return r
 
 @app.post("/update_library")
 async def update_library(request: LibraryRequest):
-    command = ["arduino-cli", "lib", "update", request.library_name]
-    r = run_command(command)
+    r = run_arduino_cli(["lib", "update", safe_cli_arg(request.library_name, "library name")])
     build_library_cache()
     return r
 
 @app.post("/update_all_libraries")
 async def update_all_libraries():
-    command = ["arduino-cli", "lib", "update"]
-    r = run_command(command)
+    r = run_arduino_cli(["lib", "update"])
     build_library_cache()
     return r
 
@@ -549,21 +603,16 @@ async def update_all_libraries():
 # ---------------------------------------------------------
 @app.get("/list_connected_boards")
 async def list_connected_boards():
-    command = ["arduino-cli", "board", "list"]
-    return run_command(command)
+    return run_arduino_cli(["board", "list"])
 
 @app.post("/search_cores")
 async def search_cores(request: CoreSearchRequest):
-    command = ["arduino-cli", "core", "search", request.keyword]
-    return run_command(command)
+    return run_arduino_cli(["core", "search", safe_cli_arg(request.keyword, "search keyword")])
 
 @app.post("/install_core")
 async def install_core(request: CoreRequest):
-    command = ["arduino-cli", "core", "install", request.core]
-    return run_command(command)
+    return run_arduino_cli(["core", "install", safe_cli_arg(request.core, "core")])
 
 @app.post("/uninstall_core")
 async def uninstall_core(request: CoreRequest):
-    command = ["arduino-cli", "core", "uninstall", request.core]
-    return run_command(command)
-
+    return run_arduino_cli(["core", "uninstall", safe_cli_arg(request.core, "core")])
