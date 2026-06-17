@@ -1,4 +1,8 @@
 # Arduino-Project-Manager-GPT
+[![License](https://flat.badgen.net/github/license/ripred/Arduino-Project-Manager-GPT)](https://github.com/ripred/Arduino-Project-Manager-GPT/blob/main/LICENSE)
+[![Stars](https://flat.badgen.net/github/stars/ripred/Arduino-Project-Manager-GPT)](https://github.com/ripred/Arduino-Project-Manager-GPT/stargazers)
+[![Forks](https://flat.badgen.net/github/forks/ripred/Arduino-Project-Manager-GPT)](https://github.com/ripred/Arduino-Project-Manager-GPT/network/members)
+
 A complete customized GPT that has access to your host machine's `Arduino/` folder to compile, upload, create, debug, manage libraries and board cores, automate build processes and much more!
 
 [![Watch a demo video](thumbnail.jpg)](https://www.youtube.com/watch?v=Hhlq1Eq2puk)
