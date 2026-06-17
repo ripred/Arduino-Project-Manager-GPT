@@ -1,9 +1,9 @@
 # Arduino-Project-Manager-GPT
 
-[![Python](https://img.shields.io/static/v1?style=flat&label=Python&message=3.x&color=3776ab&labelColor=24292f)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/static/v1?style=flat&label=License&message=MIT&color=0969da&labelColor=24292f)](https://github.com/ripred/Arduino-Project-Manager-GPT/blob/main/LICENSE)
-[![Stars](https://img.shields.io/static/v1?style=flat&label=Stars&message=2&color=bf8700&labelColor=24292f)](https://github.com/ripred/Arduino-Project-Manager-GPT/stargazers)
-[![Forks](https://img.shields.io/static/v1?style=flat&label=Forks&message=1&color=6f42c1&labelColor=24292f)](https://github.com/ripred/Arduino-Project-Manager-GPT/network/members)
+[![Python](https://flat.badgen.net/badge/Python/3.x/3776ab?labelColor=24292f)](https://www.python.org/downloads/)
+[![License](https://flat.badgen.net/badge/License/MIT/0969da?labelColor=24292f)](https://github.com/ripred/Arduino-Project-Manager-GPT/blob/main/LICENSE)
+[![Stars](https://flat.badgen.net/badge/Stars/2/bf8700?labelColor=24292f)](https://github.com/ripred/Arduino-Project-Manager-GPT/stargazers)
+[![Forks](https://flat.badgen.net/badge/Forks/1/6f42c1?labelColor=24292f)](https://github.com/ripred/Arduino-Project-Manager-GPT/network/members)
 
 A complete customized GPT that has access to your host machine's `Arduino/` folder to compile, upload, create, debug, manage libraries and board cores, automate build processes and much more!
 
